@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -42,8 +42,12 @@
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-2">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ingresos Totales vs. Egresos Totales Mensuales</h2>
-                <div class="bg-gray-50 p-4 rounded-lg h-[550px] mb-4 relative">
-                    <canvas id="mainChart" class="cursor-pointer"></canvas>
+                <!-- Container with horizontal scroll -->
+                <div class="bg-gray-50 p-4 rounded-lg h-[550px] mb-4 relative overflow-x-auto">
+                    <!-- Inner container to enforce min-width for the chart -->
+                    <div class="h-full" style="min-width: 700px;">
+                         <canvas id="mainChart" class="cursor-pointer"></canvas>
+                    </div>
                 </div>
                 <div id="main-legend" class="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 p-4 border-t"></div>
             </div>
@@ -67,7 +71,7 @@
                 </div>
                 <div class="print-hide bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
                     <p class="font-semibold text-blue-800">Gráfica Interactiva</p>
-                    <p class="text-sm text-blue-700">Haga clic en una barra de egresos para ver el detalle de sus componentes.</p>
+                    <p class="text-sm text-blue-700">En pantallas pequeñas, desplace la gráfica horizontalmente para ver todos los meses. Haga clic en una barra de egresos para ver el detalle.</p>
                 </div>
             </aside>
         </main>
@@ -88,6 +92,8 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const mainCtx = document.getElementById('mainChart').getContext('2d');
+
             const colorPalette = {
                 darkBlue: '#033270', midBlue1: '#1368AA',
                 costoVentas: '#D9534F', gastosAdmonVentas: '#5CB85C', 
@@ -108,36 +114,20 @@
                 saldoFinal: [20505, 17094, 23860, 23162, 25141, 23942, 20203, 18844],
             };
             
-            // Calculate total expenses per month
             const totalEgresosMes = cashFlowData.months.map((_, i) => 
                 Object.values(cashFlowData.egresosDetalle).reduce((sum, arr) => sum + arr[i], 0)
             );
-
-            // --- KPI Cards ---
+            
             const formatCurrency = (value, compact = false) => compact ? (value / 1000).toFixed(0) + 'K' : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
             document.getElementById('total-ingresos').textContent = formatCurrency(cashFlowData.recaudos.reduce((a, b) => a + b, 0));
             document.getElementById('total-egresos').textContent = formatCurrency(totalEgresosMes.reduce((a, b) => a + b, 0));
-
-            // --- Debt Annotations ---
-            const annotations = {};
-            cashFlowData.abonosDeuda.forEach((abono, index) => {
-                if (abono > 0) {
-                    annotations[`label${index}`] = {
-                        type: 'label', xValue: cashFlowData.months[index], yValue: totalEgresosMes[index],
-                        yAdjust: -10, content: `Abono: ${formatCurrency(abono, true)}`, color: 'white',
-                        backgroundColor: 'rgba(3, 50, 112, 0.8)', font: { size: 10, weight: 'bold' },
-                        padding: 4, borderRadius: 4,
-                    };
-                }
-            });
             
-            // --- Main Bar Chart ---
             const mainChartDatasets = [
                 { type: 'line', label: 'Saldo Final de Caja', data: cashFlowData.saldoFinal, borderColor: colorPalette.darkBlue, borderWidth: 3, fill: false, tension: 0.3, pointRadius: 4, pointBackgroundColor: colorPalette.darkBlue, yAxisID: 'y1' },
                 { label: 'Recaudos', data: cashFlowData.recaudos, backgroundColor: colorPalette.midBlue1 },
                 { label: 'Egresos', data: totalEgresosMes, backgroundColor: colorPalette.costoVentas }
             ];
-
+            
             const mainLegendContainer = document.getElementById('main-legend');
             mainChartDatasets.forEach(ds => {
                 let color = ds.type === 'line' ? ds.borderColor : ds.backgroundColor;
@@ -145,16 +135,33 @@
                 mainLegendContainer.innerHTML += `<div class="legend-item"><span class="legend-dot" style="${style}"></span>${ds.label}</div>`;
             });
             
-            const mainCtx = document.getElementById('mainChart').getContext('2d');
-            const mainChart = new Chart(mainCtx, {
+            const annotations = {};
+            cashFlowData.abonosDeuda.forEach((abono, index) => {
+                if (abono > 0) {
+                    annotations[`label${index}`] = {
+                        type: 'label', xValue: cashFlowData.months[index], yValue: totalEgresosMes[index],
+                        yAdjust: -10, content: `Abono: ${formatCurrency(abono, true)}`, color: 'white',
+                        backgroundColor: 'rgba(3, 50, 112, 0.8)', font: { size: 10, weight: 'bold' },
+                        padding: 4, borderRadius: 4
+                    };
+                }
+            });
+
+            // --- Calculate Y-Axis Max values for better scaling ---
+            const maxBarValue = Math.max(...cashFlowData.recaudos, ...totalEgresosMes);
+            const suggestedMaxY = maxBarValue * 1.1; // Add a 10% buffer
+            const maxLineValue = Math.max(...cashFlowData.saldoFinal);
+            const suggestedMaxY1 = maxLineValue * 1.1; // Add a 10% buffer
+
+            new Chart(mainCtx, {
                 type: 'bar',
                 data: { labels: cashFlowData.months, datasets: mainChartDatasets },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
                     onClick: (event, elements) => {
                         if (elements.length > 0) {
                             const clickedElement = elements[0];
-                            // Check if the clicked bar is an "Egresos" bar (datasetIndex: 2)
                             if (clickedElement.datasetIndex === 2) {
                                 openExpenseModal(clickedElement.index);
                             }
@@ -167,8 +174,8 @@
                     },
                     scales: {
                         x: { grid: { display: false } },
-                        y: { beginAtZero: true, grid: { color: '#e5e7eb' }, ticks: { callback: value => formatCurrency(value, true) }, title: { display: true, text: 'Monto Mensual' } },
-                        y1: { position: 'right', grid: { display: false }, ticks: { callback: value => formatCurrency(value, true) }, title: { display: true, text: 'Saldo Final de Caja' } }
+                        y: { beginAtZero: true, grid: { color: '#e5e7eb' }, ticks: { callback: value => formatCurrency(value, true) }, title: { display: true, text: 'Monto Mensual' }, max: suggestedMaxY },
+                        y1: { position: 'right', grid: { display: false }, ticks: { callback: value => formatCurrency(value, true) }, title: { display: true, text: 'Saldo Final de Caja' }, max: suggestedMaxY1 }
                     }
                 }
             });
@@ -195,17 +202,11 @@
                 expensePieChart = new Chart(pieCtx, {
                     type: 'doughnut',
                     data: {
-                        labels: labels.map(l => l.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())), // Prettify labels
-                        datasets: [{
-                            data: data,
-                            backgroundColor: backgroundColors,
-                            borderColor: '#fff',
-                            borderWidth: 2
-                        }]
+                        labels: labels.map(l => l.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())),
+                        datasets: [{ data: data, backgroundColor: backgroundColors, borderColor: '#fff', borderWidth: 2 }]
                     },
                     options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
+                        responsive: true, maintainAspectRatio: false,
                         plugins: {
                             legend: { position: 'top' },
                             tooltip: { callbacks: { label: context => { let label = context.label || ''; if (label) { label += ': '; } label += formatCurrency(context.raw); return label; }}}
