@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infografía Interactiva: Proyección de Flujo de Caja 2025</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.4.0/chartjs-plugin-annotation.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7fa;
+        }
+        :root {
+            --dark-blue: #033270;
+            --mid-blue-1: #1368AA;
+            --expense-red: #D9534F;
+        }
+        .legend-item { display: flex; align-items: center; font-size: 0.875rem; color: #4a5568; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 0.25rem; display: inline-block; margin-right: 8px; flex-shrink: 0; }
+        .kpi-card { background-color: white; border-left-width: 4px; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .modal { transition: opacity 0.25s ease; }
+        .modal-content { transition: transform 0.25s ease; }
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white; }
+            .print-no-shadow { box-shadow: none; }
+            .print-hide { display: none; }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-7xl bg-white shadow-2xl rounded-xl p-8 print-no-shadow">
+        <header class="border-b-2 pb-4 mb-8 text-center" style="border-color: var(--dark-blue);">
+            <h1 class="text-4xl font-black tracking-tight" style="color: var(--dark-blue);">PROYECCIÓN DE FLUJO DE CAJA 2025</h1>
+            <p class="text-xl text-gray-600 mt-1">Análisis Detallado de Ingresos, Egresos y Saldo Final</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Ingresos Totales vs. Egresos Totales Mensuales</h2>
+                <div class="bg-gray-50 p-4 rounded-lg h-[550px] mb-4 relative">
+                    <canvas id="mainChart" class="cursor-pointer"></canvas>
+                </div>
+                <div id="main-legend" class="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 p-4 border-t"></div>
+            </div>
+
+            <aside class="flex flex-col space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800">Análisis del Periodo</h2>
+                <div class="space-y-4">
+                    <div class="p-6 rounded-lg text-white shadow-lg" style="background-color: var(--dark-blue);">
+                        <p class="text-sm font-medium uppercase opacity-80">Hito Financiero Clave</p>
+                        <p class="text-lg font-semibold">Total Abonos a Deuda</p>
+                        <p class="text-4xl font-black" style="color: #9DCEE2;">$14.000 Millones</p>
+                    </div>
+                    <div class="kpi-card" style="border-color: var(--mid-blue-1);">
+                        <p class="text-sm font-medium text-gray-500">Total Recaudos Periodo</p>
+                        <p id="total-ingresos" class="text-2xl font-bold" style="color: var(--dark-blue);"></p>
+                    </div>
+                    <div class="kpi-card" style="border-color: var(--expense-red);">
+                        <p class="text-sm font-medium text-gray-500">Total Egresos Periodo</p>
+                        <p id="total-egresos" class="text-2xl font-bold" style="color: var(--dark-blue);"></p>
+                    </div>
+                </div>
+                <div class="print-hide bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                    <p class="font-semibold text-blue-800">Gráfica Interactiva</p>
+                    <p class="text-sm text-blue-700">Haga clic en una barra de egresos para ver el detalle de sus componentes.</p>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- Modal for Expense Breakdown -->
+    <div id="expense-modal" class="modal print-hide fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 opacity-0 pointer-events-none">
+        <div class="modal-content bg-white w-full max-w-2xl rounded-lg shadow-xl p-6 transform scale-95">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 id="modal-title" class="text-2xl font-bold text-gray-800">Detalle de Egresos</h3>
+                <button id="close-modal-btn" class="text-gray-500 hover:text-gray-800 text-3xl leading-none">&times;</button>
+            </div>
+            <div class="h-80 md:h-96">
+                <canvas id="expense-pie-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const colorPalette = {
+                darkBlue: '#033270', midBlue1: '#1368AA',
+                costoVentas: '#D9534F', gastosAdmonVentas: '#5CB85C', 
+                impuestos: '#6B46C1', comprasActivos: '#F0AD4E', otros: '#5BC0DE'
+            };
+
+            const cashFlowData = {
+                months: ['MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'],
+                recaudos: [34364, 29955, 36256, 34493, 32065, 31063, 31055, 31137],
+                egresosDetalle: {
+                    costoVentas: [19471, 21583, 16056, 23572, 16012, 22763, 22624, 22115],
+                    gastosAdmonVentas: [5065, 5097, 4921, 4732, 4729, 4819, 5105, 5100],
+                    impuestos: [4065, 2744, 5933, 3291, 5680, 2287, 4533, 733],
+                    comprasActivos: [264, 466, 466, 466, 466, 466, 466, 466],
+                    otros: [1716, 3475, 2113, 3130, 3198, 1926, 2067, 4082] 
+                },
+                abonosDeuda: [0, 7000, 0, 6000, 0, 1000, 0, 0],
+                saldoFinal: [20505, 17094, 23860, 23162, 25141, 23942, 20203, 18844],
+            };
+            
+            // Calculate total expenses per month
+            const totalEgresosMes = cashFlowData.months.map((_, i) => 
+                Object.values(cashFlowData.egresosDetalle).reduce((sum, arr) => sum + arr[i], 0)
+            );
+
+            // --- KPI Cards ---
+            const formatCurrency = (value, compact = false) => compact ? (value / 1000).toFixed(0) + 'K' : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
+            document.getElementById('total-ingresos').textContent = formatCurrency(cashFlowData.recaudos.reduce((a, b) => a + b, 0));
+            document.getElementById('total-egresos').textContent = formatCurrency(totalEgresosMes.reduce((a, b) => a + b, 0));
+
+            // --- Debt Annotations ---
+            const annotations = {};
+            cashFlowData.abonosDeuda.forEach((abono, index) => {
+                if (abono > 0) {
+                    annotations[`label${index}`] = {
+                        type: 'label', xValue: cashFlowData.months[index], yValue: totalEgresosMes[index],
+                        yAdjust: -10, content: `Abono: ${formatCurrency(abono, true)}`, color: 'white',
+                        backgroundColor: 'rgba(3, 50, 112, 0.8)', font: { size: 10, weight: 'bold' },
+                        padding: 4, borderRadius: 4,
+                    };
+                }
+            });
+            
+            // --- Main Bar Chart ---
+            const mainChartDatasets = [
+                { type: 'line', label: 'Saldo Final de Caja', data: cashFlowData.saldoFinal, borderColor: colorPalette.darkBlue, borderWidth: 3, fill: false, tension: 0.3, pointRadius: 4, pointBackgroundColor: colorPalette.darkBlue, yAxisID: 'y1' },
+                { label: 'Recaudos', data: cashFlowData.recaudos, backgroundColor: colorPalette.midBlue1 },
+                { label: 'Egresos', data: totalEgresosMes, backgroundColor: colorPalette.costoVentas }
+            ];
+
+            const mainLegendContainer = document.getElementById('main-legend');
+            mainChartDatasets.forEach(ds => {
+                let color = ds.type === 'line' ? ds.borderColor : ds.backgroundColor;
+                let style = ds.type === 'line' ? `border: 2px solid ${color};` : `background-color: ${color};`;
+                mainLegendContainer.innerHTML += `<div class="legend-item"><span class="legend-dot" style="${style}"></span>${ds.label}</div>`;
+            });
+            
+            const mainCtx = document.getElementById('mainChart').getContext('2d');
+            const mainChart = new Chart(mainCtx, {
+                type: 'bar',
+                data: { labels: cashFlowData.months, datasets: mainChartDatasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const clickedElement = elements[0];
+                            // Check if the clicked bar is an "Egresos" bar (datasetIndex: 2)
+                            if (clickedElement.datasetIndex === 2) {
+                                openExpenseModal(clickedElement.index);
+                            }
+                        }
+                    },
+                    plugins: { 
+                        legend: { display: false }, 
+                        tooltip: { mode: 'index', intersect: false, callbacks: { label: context => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}` } },
+                        annotation: { annotations: annotations }
+                    },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { beginAtZero: true, grid: { color: '#e5e7eb' }, ticks: { callback: value => formatCurrency(value, true) }, title: { display: true, text: 'Monto Mensual' } },
+                        y1: { position: 'right', grid: { display: false }, ticks: { callback: value => formatCurrency(value, true) }, title: { display: true, text: 'Saldo Final de Caja' } }
+                    }
+                }
+            });
+
+            // --- Modal and Pie Chart Logic ---
+            const modal = document.getElementById('expense-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const pieCtx = document.getElementById('expense-pie-chart').getContext('2d');
+            let expensePieChart = null;
+
+            function openExpenseModal(monthIndex) {
+                const monthName = cashFlowData.months[monthIndex];
+                modalTitle.textContent = `Detalle de Egresos - ${monthName}`;
+                
+                const labels = Object.keys(cashFlowData.egresosDetalle);
+                const data = labels.map(key => cashFlowData.egresosDetalle[key][monthIndex]);
+                const backgroundColors = labels.map(key => colorPalette[key]);
+
+                if (expensePieChart) {
+                    expensePieChart.destroy();
+                }
+
+                expensePieChart = new Chart(pieCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels.map(l => l.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())), // Prettify labels
+                        datasets: [{
+                            data: data,
+                            backgroundColor: backgroundColors,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { callbacks: { label: context => { let label = context.label || ''; if (label) { label += ': '; } label += formatCurrency(context.raw); return label; }}}
+                        }
+                    }
+                });
+
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                modal.querySelector('.modal-content').classList.remove('scale-95');
+            }
+
+            function closeModal() {
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                modal.querySelector('.modal-content').classList.add('scale-95');
+            }
+
+            closeModalBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    closeModal();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
